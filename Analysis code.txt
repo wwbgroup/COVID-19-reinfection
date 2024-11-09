@@ -1,0 +1,899 @@
+library(MatchIt)
+library(survival)
+library(survminer)
+library(stringr)
+library(stringi)
+library(MASS)
+library(brant)
+library(tidyverse)
+library(readxl)
+library(epiR)
+mydat1$event=as.numeric(ifelse(mydat1$secondary=="1",1,0))
+table2_contacts <- NULL
+table2_dat<- dplyr::select(.data = mydat1,sex,age,region,Occupation1,severity_fir,event) %>% as.data.frame()
+for (k in 1:5) {
+  for (m in unique(table2_dat[,k])) {
+    temp <- table2_dat[table2_dat[,k]==m,]
+    temp1<-temp%>%dplyr::summarise(event=sum(event,na.rm = T),No=n())
+    temp2 <- epi.conf(as.matrix(temp1[,1:2]), ctype = "inc.rate", 
+                      method = "byar",design = 1, 
+                      conf.level = 0.95)
+    temp2[,1:3]=apply(temp2[,1:3], 2, function(x)x*100)
+    temp2[,1:3]=apply(temp2[,1:3], 2, function(x)round(x,2))
+    temp2 <- paste(temp2[1]," (",temp2[2],", ",temp2[3],")",sep = "")
+    table2_contacts <- rbind(table2_contacts,
+                             data.frame(level=m,event=temp1[1],contacts=temp1[2],rate=temp2,group=colnames(table2_dat)[k],var=paste(m,colnames(table2_dat)[k],sep="-")))
+  }
+}
+table2_Contacts=table2_contacts
+for (i in c("No","Yes")) {
+  if (i=="No"){
+    table2_dat<- dplyr::select(.data = mydat1[mydat1$frist_vac=="No",],sex,age,region,Occupation1,severity_fir,event) %>% as.data.frame()
+  } else {
+    table2_dat<- dplyr::select(.data = mydat1[mydat1$frist_vac=="Yes",],sex,age,region,Occupation1,severity_fir,event) %>% as.data.frame()
+  }
+  table2_contacts <- NULL
+  for (k in 1:5) {
+    for (m in unique(table2_dat[,k])) {
+      temp <- table2_dat[table2_dat[,k]==m,]
+      temp1<-temp%>%dplyr::summarise(event=sum(event,na.rm = T),No=n())
+      temp2 <- epi.conf(as.matrix(temp1[,1:2]), ctype = "inc.rate", 
+                        method = "byar",design = 1, 
+                        conf.level = 0.95)
+      temp2[,1:3]=apply(temp2[,1:3], 2, function(x)x*100)
+      temp2[,1:3]=apply(temp2[,1:3], 2, function(x)round(x,2))
+      temp2 <- paste(temp2[1]," (",temp2[2],", ",temp2[3],")",sep = "")
+      table2_contacts <- rbind(table2_contacts,
+                               data.frame(level=m,event=temp1[1],contacts=temp1[2],rate=temp2,group=colnames(table2_dat)[k],var=paste(m,colnames(table2_dat)[k],sep="-")))
+    }
+  }
+  table2_Contacts=merge(table2_Contacts,table2_contacts,by="var",all = T)
+}
+library(tableone)
+cat=c("sex","age","region","Occupation1","severity_fir")
+table1<- CreateTableOne(vars =cat, data = mydat1, factorVars = cat)
+table1 <- print(table1, nonnormal = biomarkers, exact = "stage", quote = FALSE, noSpaces = TRUE, printToggle = FALSE, showAllLevels = TRUE)
+write.csv(table1,"Table1.csv")
+table2<- CreateTableOne(vars =cat, strata=c("frist_vac"),data = mydat1, factorVars = cat)
+table2 <- print(table2, nonnormal = biomarkers, exact = "stage", quote = FALSE, noSpaces = TRUE, printToggle = FALSE, showAllLevels = TRUE)
+write.csv(table2,"Table2.csv")
+getwd()
+write.csv(table2_Contacts,"Table3.csv")
+rate=NULL
+for (i in c("Overall","No","Yes")) {
+  if (i=="Overall"){
+    table2_dat<- dplyr::select(.data = mydat1,sex,age,region,Occupation1,severity_fir,event) %>% as.data.frame()
+  } else if (i=="No"){
+    table2_dat<- dplyr::select(.data = mydat1[mydat1$frist_vac=="No",],sex,age,region,Occupation1,severity_fir,event) %>% as.data.frame()
+  } else {
+    table2_dat<- dplyr::select(.data = mydat1[mydat1$frist_vac=="Yes",],sex,age,region,Occupation1,severity_fir,event) %>% as.data.frame()
+  }
+  temp <- table2_dat
+  temp1<-temp%>%dplyr::summarise(event=sum(event,na.rm = T),No=n())
+  temp2 <- epi.conf(as.matrix(temp1[,1:2]), ctype = "inc.rate", 
+                    method = "byar",design = 1, 
+                    conf.level = 0.95)
+  temp2[,1:3]=apply(temp2[,1:3], 2, function(x)x*100)
+  temp2[,1:3]=apply(temp2[,1:3], 2, function(x)round(x,2))
+  temp2 <- paste(temp2[1]," (",temp2[2],", ",temp2[3],")",sep = "")
+  rate <- rbind(rate,data.frame(level=i,rate=temp2))
+}
+
+
+
+
+
+###感染以后接种与否
+VE_table2=NULL
+n=1
+covariates=c("接种历史1","接种历史2","接种历史3","接种历史4","接种历史5","接种历史6","接种历史7")
+for (x in covariates) {
+  if (x=="接种历史2"){
+    fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age + sex+region+Occupation1+symptom,
+                 data=mydat2[mydat2$group%in%c("1-0","1-1"),])
+  } else if (x=="接种历史3"){
+    fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age + sex+region+Occupation1+symptom,
+                 data=mydat2[mydat2$group%in%c("2-0","2-1"),])
+  } else if (x=="接种历史4"){
+    fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age + sex+region+Occupation1+symptom,
+                 data=mydat2[mydat2$group%in%c("3-0","3-1"),])
+  } else if (x=="接种历史5"){
+    fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age + sex+region+Occupation1+symptom,
+                 data=mydat2[mydat2$status_fir1=="Patial vaccination",])
+  }else if (x=="接种历史6"){
+    fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age + sex+region+Occupation1+symptom,
+                 data=mydat2[mydat2$status_fir1=="Full vaccination",])
+  } else if (x=="接种历史7"){
+    fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age + sex+region+Occupation1+symptom,
+                 data=mydat2[mydat2$status_fir1=="Booster vaccination",])
+  }else {
+    fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age + sex+region+Occupation1+symptom,
+                 data=mydat2)
+  }
+  Sum<-summary(fit)
+  Sum$conf.int<-as.data.frame(Sum$conf.int)
+  Pvalue<-round(Sum$coefficients[,5],digits = 3)[1]
+  HR<-round(Sum$coefficients[,2],4)[1]
+  low=round(Sum$conf.int$`lower .95`,4)[1]
+  high=round(Sum$conf.int$`upper .95`,4)[1]
+  VE_table2 <- rbind(VE_table2,
+                     data.frame(character=x,"low"=low,"high"=high,"HR"=HR,"Pvalue"=Pvalue))
+  n=n+1
+}
+VE_table2[,c("high","low","HR")]=apply(VE_table2[,c("high","low","HR")],2,function(x){round(x,2)})
+VE_table2$group=c("Vaccination, infection, vaccination","First vaccination, infection, second/third vaccination",
+                  "First vaccination, second vaccination, infection, third/fourth vaccination","First vaccination, second vaccination, third vaccination,infection, fourth vaccination",
+                  "Patial vaccination, infection, vaccination",
+                  "Full vaccination, infection, vaccination",
+                  "Booster vaccination, infection, vaccination")
+VE_table2$group=factor(VE_table2$group,levels = c("Vaccination, infection, vaccination","First vaccination, infection, second/third vaccination",
+                                                  "First vaccination, second vaccination, infection, third/fourth vaccination","First vaccination, second vaccination, third vaccination,infection, fourth vaccination",
+                                                  "Patial vaccination, infection, vaccination",
+                                                  "Full vaccination, infection, vaccination",
+                                                  "Booster vaccination, infection, vaccination"))
+VE_table2$CI=paste(paste(paste(paste(VE_table2$HR,"%",sep="")," (",sep=""),paste(round(VE_table2$low,2),round(VE_table2$high,2),sep = paste(paste(" ","-",sep="")," ",sep="")),sep = ""),")",sep="")
+VE_table2$Kind="Time varying exposure"
+cols<-c('#E6EB00','#65B48E','#3E5CC5',"#1b0e33")
+pal<-colorRampPalette(cols)
+p=ggplot(VE_table2)+
+  geom_point(aes(x=group,y=HR),size=4,color='#156077',fill='#156077',alpha=0.7)+geom_errorbar(aes(x=group,ymin=low,ymax=high),size=1,position = position_dodge(width = 0.2),width=0.2,color="#156077")+
+  scale_x_discrete(labels=c("V-I-V","1V-I-V",
+                            "2V-I-V","3V-I-V",
+                            "Patial V-I-V",
+                            "Full V-I-V",
+                            "Booster V-I-V"))+geom_hline(aes(yintercept=1),colour=pal(8)[6],linetype="dashed")+ coord_flip()+
+  scale_y_continuous(limits = c(0.6,1.4),breaks = seq(0.6,1.4,0.1),labels = seq(0.6,1.4,0.1))+
+  theme(legend.position=c(0.9,0.7),legend.text = element_text(face="bold",size=15),
+        legend.title = element_text(face="bold",size=15),
+        axis.text= element_text(face="bold",size=12),
+        axis.text.x = element_text(vjust = 0.5,angle = 30),
+        axis.title = element_text(face="bold",size=15,color = "black",hjust = 0.5),
+        title=element_text(face="bold",size=18,color = "black",hjust = 0.5),
+        axis.line = element_line(size=0.8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(color = "black", size = 1.2, fill = NA),
+        panel.background = element_blank(),
+        plot.margin = margin(t=25,r=25,b=25,l=25,unit = "pt"))+
+  guides(fill=guide_legend(nrow=4))+labs(x="Hazard ratios against reinfection",y="Hazard ratios")
+ggsave(p,limitsize = FALSE,
+       width = 12,height =6,dpi = 300,filename = "VE.png")
+
+
+covariates=c("age","sex","region","Occupation1","symptom")
+VE_table2=NULL
+n=1
+for (x in covariates) {
+  for (m in unique(mydat2[,x])){
+    temp <- mydat2[mydat2[,x]==m,]
+    if (x=="age"){
+      fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+ sex+region+Occupation1+symptom,
+                   data=temp)
+    } else if (x=="sex"){
+      fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age +region+Occupation1+symptom,
+                   data=temp)
+    }else if (x=="region"){
+      fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age + sex+Occupation1+symptom,
+                   data=temp)
+    }else if (x=="Occupation1"){
+      fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age + sex+region+symptom,
+                   data=temp)
+    } else {
+      fit <- coxph(Surv(time1, time2,secondary) ~ first_vac+age + sex+region+Occupation1,
+                   data=temp)
+    }
+    Sum<-summary(fit)
+    Sum$conf.int<-as.data.frame(Sum$conf.int)
+    Pvalue<-round(Sum$coefficients[,5],digits = 3)[1]
+    HR<-round(Sum$coefficients[,2],4)[1]
+    low=round(Sum$conf.int$`lower .95`,4)[1]
+    high=round(Sum$conf.int$`upper .95`,4)[1]
+    temp1<-temp%>%group_by(接种历史1)%>%dplyr::summarise(event=sum(secondary,na.rm = T),No=n())
+    temp2 <- epi.conf(as.matrix(temp1[,2:3]), ctype = "inc.rate", 
+                      method = "byar",design = 1, 
+                      conf.level = 0.95)
+    temp2[,1:3]=apply(temp2[,1:3], 2, function(x)x*100)
+    temp2[,1:3]=apply(temp2[,1:3], 2, function(x)round(x,2))
+    temp2$rate <- paste(temp2$est," (",temp2$lower,", ",temp2$upper,")",sep = "")
+    
+    VE_table2 <- rbind(VE_table2,
+                       data.frame(character=x,sub=m,"Unvaccinated_n"=temp1$No[1],"Unvaccinated"=temp2$rate[1],"Vaccinated_n"=temp1$No[2],"Vaccinated"=temp2$rate[2],"low"=low,"high"=high,"HR"=HR,"Pvalue"=Pvalue))
+    
+  }
+  n=n+1
+}
+VE_table2$CI=paste(paste(paste(round(VE_table2$HR,2)," (",sep=""),paste(round(VE_table2$low,2),round(VE_table2$high,2),sep = paste(paste("",",",sep="")," ",sep="")),sep = ""),")",sep="")
+VE_table2$CI<-case_when(
+  VE_table2$Pvalue<0.001~paste(VE_table2$CI,"***",sep = ""),
+  VE_table2$Pvalue<0.01 ~paste(VE_table2$CI,"**", sep = ""),
+  VE_table2$Pvalue<0.05 ~paste(VE_table2$CI,"*",  sep = ""),
+  TRUE ~ VE_table2$CI)
+VE_table2$Pvalue<-ifelse(as.numeric(VE_table2$Pvalue)<0.001,"< 0.001",round(as.numeric(VE_table2$Pvalue),digits = 3))
+
+write.csv(VE_table2,"Table_varying-exposure.csv")
+library(readxl)
+library(forester)
+shenlin1 <- read_excel("D:/Desktop/数据/浦东CDC/重复感染人员数据加密/Table_varying.xlsx")
+mydata <- shenlin1
+mydata$Subgroup <- ifelse(is.na(mydata$`aHR (95% CI)`),mydata$Subgroup,
+                          paste0("   ", mydata$Subgroup))  # 再增加一个空格
+mydata[,c("uc","lc","beta")]=apply(mydata[,c("uc","lc","beta")],2,function(x){as.numeric(x)})
+
+# 制作森林图
+myfigure1<-forester(left_side_data = mydata[,1:3],
+                    estimate_precision = 2,# 定义森林图中左侧的三个变量
+                    estimate = mydata$beta,
+                    estimate_col_name = "aHR (95% CI)",
+                    font_family = "sans",
+                    file_path = here::here("forester.png"),# 森林图中的估计值，或回归系数
+                    
+                    ci_low = mydata$lc,       # 置信区间的下限
+                    
+                    ci_high = mydata$uc,     # 置信区间的上限
+                    
+                    xlim = c(0.4, 1.6),             # x轴上的范围
+                    xbreaks=seq(0.3,1.6,0.1),
+                    
+                    arrows = TRUE,                  # 在x轴底部添加箭头
+                    
+                    arrow_labels = c("Lower hazard ratio","Higher hazard ratio"),
+                    
+                    null_line_at = 1,
+                    lower_header_row=F,
+                    add_plot_gap=T,
+                    dpi = 400) # 注明箭头所指代的含义,
+
+
+
+VE_table1=NULL
+n=1
+PSM=list()
+covariates=c("接种历史1","接种历史2","接种历史3","Gap0","Gap1","Gap2","接种历史5","接种历史6","接种历史7")
+for (x in covariates) {
+  if (x=="接种历史1"){
+    data=mydat1
+    data=data[!is.na(data$接种历史1)&is.na(mydat1$接种时间4),]
+    fitmodel2 <- MatchIt::matchit(接种历史1 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  } else if (x=="接种历史2"){
+    data=mydat1[mydat1$group%in% c("1-0","1-1","1-2")&is.na(mydat1$接种时间4),]
+    data=data[!is.na(data$接种历史2),]
+    fitmodel2 <- MatchIt::matchit(接种历史2 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  } else if (x=="接种历史3"){
+    data=mydat1[mydat1$group%in% c("2-0","2-1","2-2")&is.na(mydat1$接种时间4),]
+    data=data[!is.na(data$接种历史3),]
+    fitmodel2 <- MatchIt::matchit(接种历史3 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  } else if (x=="Gap0"){
+    data=mydat1[mydat1$first_dose!="0"&is.na(mydat1$接种时间4),]
+    data=data[!is.na(data$Gap0),]
+    fitmodel2 <- MatchIt::matchit(Gap0 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  }else if (x=="Gap1"){
+    data=mydat1[mydat1$first_dose!="0"&is.na(mydat1$接种时间4),]
+    data=data[!is.na(data$Gap1),]
+    fitmodel2 <- MatchIt::matchit(Gap1 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  } else if (x=="Gap2"){
+    data=mydat1[mydat1$first_dose!="0"&is.na(mydat1$接种时间4),]
+    data=data[!is.na(data$Gap2),]
+    fitmodel2 <- MatchIt::matchit(Gap2 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  } else if (x=="接种历史5"){
+    data=mydat1[mydat1$status_fir1=="Patial vaccination"&is.na(mydat1$接种时间4),]
+    data=data[!is.na(data$接种历史5),]
+    fitmodel2 <- MatchIt::matchit(接种历史5 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  } else if (x=="接种历史6"){
+    data=mydat1[mydat1$status_fir1=="Full vaccination"&is.na(mydat1$接种时间4),]
+    data=data[!is.na(data$接种历史6),]
+    fitmodel2 <- MatchIt::matchit(接种历史6 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  }else {
+    data=mydat1[mydat1$status_fir1=="Booster vaccination"&is.na(mydat1$接种时间4),]
+    data=data[!is.na(data$接种历史7),]
+    fitmodel2 <- MatchIt::matchit(接种历史7 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  }
+  psm<- match.data(fitmodel2)
+  PSM[[n]]<-psm
+  FML<-as.formula(paste0("Surv(time,secondary==1) ~ ",x))
+  Cox<-coxph(FML,data = psm) 
+  Sum<-summary(Cox)
+  Sum$conf.int<-as.data.frame(Sum$conf.int)
+  Pvalue<-round(Sum$coefficients[,5],digits = 3)
+  HR<-round(Sum$coefficients[,2],4)
+  low=round(Sum$conf.int$`lower .95`,4)
+  high=round(Sum$conf.int$`upper .95`,4)
+  VE_table1 <- rbind(VE_table1,
+                     data.frame(character=x,"low"=low,"high"=high,"HR"=HR,"Pvalue"=Pvalue))
+  n=n+1
+}
+
+
+write.csv(VE_table,"VE_table.csv")
+library(epiR)
+###################亚组分析################
+covariates=c("接种历史2","接种历史3","Gap0","Gap1","Gap2","接种历史5","接种历史6")
+VE_table_sub=NULL
+for (x in covariates) {
+  if (x=="接种历史2"){
+    data=mydat1[mydat1$group%in% c("1-0","1-1","1-2")&is.na(mydat1$接种时间4),]
+    data$接种历史2=ifelse(data$接种历史2=="First vaccination, infection, second/third vaccination","1","0")%>%as.numeric()
+    data=data[!is.na(data$接种历史2)&!is.na(data$age)&!is.na(data$sex)&!is.na(data$Occupation1)&!is.na(data$region)&!is.na(data$symptom),]
+    fitmodel3 <- MatchIt::matchit(接种历史2 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+    psm<- match.data(fitmodel3)
+    psm$接种历史2=factor(psm$接种历史2,levels=c("0","1"))
+    table2_dat<- dplyr::select(.data = psm,sex,age,region,Occupation1,symptom,time,secondary,接种历史2) %>% as.data.frame()
+  } else if (x=="接种历史3"){
+    data=mydat1[mydat1$group%in% c("2-0","2-1","2-2")&is.na(mydat1$接种时间4),]
+    data$接种历史3=ifelse(data$接种历史3=="First vaccination, second vaccination, infection, third/fourth vaccination","1","0")%>%as.numeric()
+    data=data[!is.na(data$接种历史3)&!is.na(data$age)&!is.na(data$sex)&!is.na(data$Occupation1)&!is.na(data$region)&!is.na(data$symptom),]
+    fitmodel3 <- MatchIt::matchit(接种历史3 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+    psm<- match.data(fitmodel3)
+    psm$接种历史3=factor(psm$接种历史3,levels=c("0","1"))
+    table2_dat<- dplyr::select(.data = psm,sex,age,region,Occupation1,symptom,time,secondary,接种历史3) %>% as.data.frame()
+  } else if (x=="Gap0"){
+    data=mydat1[mydat1$first_dose!="0"&is.na(mydat1$接种时间4),]
+    data$Gap0=ifelse(data$Gap0=="Vaccinated","1","0")%>%as.numeric()
+    data=data[!is.na(data$Gap0)&!is.na(data$age)&!is.na(data$sex)&!is.na(data$Occupation1)&!is.na(data$region)&!is.na(data$symptom),]
+    fitmodel3 <- MatchIt::matchit(Gap0 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+    psm<- match.data(fitmodel3)
+    psm$Gap0=factor(psm$Gap0,levels=c("0","1"))
+    table2_dat<- dplyr::select(.data = psm,sex,age,region,Occupation1,symptom,time,secondary,Gap0) %>% as.data.frame()
+  }else if (x=="Gap1"){
+    data=mydat1[mydat1$first_dose!="0"&is.na(mydat1$接种时间4),]
+    data$Gap1=ifelse(data$Gap1=="Vaccinated","1","0")%>%as.numeric()
+    data=data[!is.na(data$Gap1)&!is.na(data$age)&!is.na(data$sex)&!is.na(data$Occupation1)&!is.na(data$region)&!is.na(data$symptom),]
+    fitmodel3 <- MatchIt::matchit(Gap1 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+    psm<- match.data(fitmodel3)
+    psm$Gap1=factor(psm$Gap1,levels=c("0","1"))
+    table2_dat<- dplyr::select(.data = psm,sex,age,region,Occupation1,symptom,time,secondary,Gap1) %>% as.data.frame()
+  } else if (x=="Gap2"){
+    data=mydat1[mydat1$first_dose!="0"&is.na(mydat1$接种时间4),]
+    data$Gap2=ifelse(data$Gap2=="Vaccinated","1","0")%>%as.numeric()
+    data=data[!is.na(data$Gap2)&!is.na(data$age)&!is.na(data$sex)&!is.na(data$Occupation1)&!is.na(data$region)&!is.na(data$symptom),]
+    fitmodel3 <- MatchIt::matchit(Gap2 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+    psm<- match.data(fitmodel3)
+    psm$Gap2=factor(psm$Gap2,levels=c("0","1"))
+    table2_dat<- dplyr::select(.data = psm,sex,age,region,Occupation1,symptom,time,secondary,Gap2) %>% as.data.frame()
+  } else if (x=="接种历史5"){
+    data=mydat1[mydat1$status_fir1=="Patial vaccination"&is.na(mydat1$接种时间4),]
+    data$接种历史5=ifelse(data$接种历史5=="Vaccinated","1","0")%>%as.numeric()
+    data=data[!is.na(data$接种历史5)&!is.na(data$age)&!is.na(data$sex)&!is.na(data$Occupation1)&!is.na(data$region)&!is.na(data$symptom),]
+    fitmodel3 <- MatchIt::matchit(接种历史5 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+    psm<- match.data(fitmodel3)
+    psm$接种历史5=factor(psm$接种历史5,levels=c("0","1"))
+    table2_dat<- dplyr::select(.data = psm,sex,age,region,Occupation1,symptom,time,secondary,接种历史5) %>% as.data.frame()
+  } else {
+    data=mydat1[mydat1$status_fir1=="Full vaccination"&is.na(mydat1$接种时间4),]
+    data$接种历史6=ifelse(data$接种历史6=="Vaccinated","1","0")%>%as.numeric()
+    data=data[!is.na(data$接种历史6)&!is.na(data$age)&!is.na(data$sex)&!is.na(data$Occupation1)&!is.na(data$region)&!is.na(data$symptom),]
+    fitmodel3 <- MatchIt::matchit(接种历史6 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+    psm<- match.data(fitmodel3)
+    psm$接种历史6=factor(psm$接种历史6,levels=c("0","1"))
+    table2_dat<- dplyr::select(.data = psm,sex,age,region,Occupation1,symptom,time,secondary,接种历史6) %>% as.data.frame()
+  } 
+  table2_contacts <- NULL
+  for (k in 1:5) {
+    for (m in unique(table2_dat[,k])) {
+      temp <- table2_dat[table2_dat[,k]==m,]
+      temp1<-temp%>%dplyr::summarise(event=sum(secondary,na.rm = T),time=sum(time)/365.25,No=n())
+      temp2 <- epi.conf(as.matrix(temp1[,1:2]), ctype = "inc.rate", 
+                        method = "byar",design = 1, 
+                        conf.level = 0.95)
+      temp2[,1:3]=apply(temp2[,1:3], 2, function(x)round(x,4))
+      temp2[,1:3]=apply(temp2[,1:3],2,function(x){x*100})
+      temp2 <- paste(temp2[1]," (",temp2[2],", ",temp2[3],")",sep = "")
+      FML<-as.formula(paste0("Surv(time,secondary==1) ~ ",x))
+      Cox<-coxph(FML,data = temp) 
+      Sum<-summary(Cox)
+      Sum$conf.int<-as.data.frame(Sum$conf.int)
+      low=round(Sum$conf.int$`lower .95`,2)
+      high=round(Sum$conf.int$`upper .95`,2)
+      CI<-paste(low,high,sep = paste(paste("",",",sep="")," ",sep=""))
+      Pvalue<-round(Sum$coefficients[,5],digits = 3)
+      HR<-round(Sum$coefficients[,2],2)
+      CI<-paste(paste(paste(HR," (",sep=""),CI,sep = ""),")",sep="")
+      table2_contacts <- rbind(table2_contacts,
+                               data.frame(kind=x,group=colnames(table2_dat)[k],level=m,n=temp1$event,N=temp1$No,rate=temp2,"CI"=CI,"low"=low,"beta"=HR,"high"=high,"P.value"=Pvalue))
+    }
+  }
+  table2_contacts=table2_contacts[table2_contacts$level!="Unknown",]
+  VE_table_sub=rbind(VE_table_sub,table2_contacts)
+}
+VE_table_sub$CI<-case_when(
+  VE_table_sub$P.value<0.001~paste(VE_table_sub$CI,"***",sep = ""),
+  VE_table_sub$P.value<0.01 ~paste(VE_table_sub$CI,"**", sep = ""),
+  VE_table_sub$P.value<0.05 ~paste(VE_table_sub$CI,"*",  sep = ""),
+  TRUE ~ VE_table_sub$CI)
+write.csv(VE_table_sub,"VE2.csv")
+###制作森林图
+#######制作森林图
+library(readxl)
+library(forester)
+shenlin1 <- read_excel("shenli1.xlsx")
+mydata <- shenlin1
+mydata$Subgroup <- ifelse(is.na(mydata$Reinfection),mydata$Subgroup,
+                          paste0("   ", mydata$Subgroup))  # 再增加一个空格
+mydata$Subgroup <- ifelse(!is.na(mydata$group),mydata$Subgroup,
+                          paste0("   ", mydata$Subgroup))  # 再增加一个空格
+
+#mydata[,5:7]=apply(mydata[,5:7],2,function(x)(as.numeric(x,digits=2)))
+
+mydata[,c("uc","lc","beta")]=apply(mydata[,c("uc","lc","beta")],2,function(x){as.numeric(x)})
+
+# 制作森林图
+myfigure1<-forester(left_side_data = mydata[,1:4],
+                    estimate_precision = 2,# 定义森林图中左侧的三个变量
+                    estimate = mydata$beta,
+                    estimate_col_name = "HR (95% CI)",
+                    font_family = "sans",
+                    file_path = here::here("forester.png"),# 森林图中的估计值，或回归系数
+                    
+                    ci_low = mydata$lc,       # 置信区间的下限
+                    
+                    ci_high = mydata$uc,     # 置信区间的上限
+                    
+                    xlim = c(0, 2),             # x轴上的范围
+                    xbreaks=seq(0,2,0.2),
+                    
+                    arrows = TRUE,                  # 在x轴底部添加箭头
+                    
+                    arrow_labels = c("Vaccine effectiveness","Risk of reinfection"),
+                    
+                    null_line_at = 1,
+                    lower_header_row=F,
+                    add_plot_gap=T,
+                    dpi = 400) # 注明箭头所指代的含义,
+shenlin2 <- read_excel("shenlin2.xlsx")
+mydata <- shenlin2
+mydata$Subgroup <- ifelse(is.na(mydata$Reinfection),mydata$Subgroup,
+                          paste0("   ", mydata$Subgroup))  # 再增加一个空格
+mydata$Subgroup <- ifelse(!is.na(mydata$group),mydata$Subgroup,
+                          paste0("   ", mydata$Subgroup))  # 再增加一个空格
+
+#mydata[,5:7]=apply(mydata[,5:7],2,function(x)(as.numeric(x,digits=2)))
+
+mydata[,c("uc","lc","beta")]=apply(mydata[,c("uc","lc","beta")],2,function(x){as.numeric(x)})
+
+# 制作森林图
+myfigure2<-forester(left_side_data = mydata[,1:4],
+                    estimate_precision = 2,# 定义森林图中左侧的三个变量
+                    estimate = mydata$beta,
+                    estimate_col_name = "HR (95% CI)",
+                    font_family = "sans",
+                    file_path = here::here("forester.png"),# 森林图中的估计值，或回归系数
+                    
+                    ci_low = mydata$lc,       # 置信区间的下限
+                    
+                    ci_high = mydata$uc,     # 置信区间的上限
+                    
+                    xlim = c(0, 2),             # x轴上的范围
+                    xbreaks=seq(0,2,0.2),
+                    
+                    arrows = TRUE,                  # 在x轴底部添加箭头
+                    
+                    arrow_labels = c("Vaccine effectiveness","Risk of reinfection"),
+                    
+                    null_line_at = 1,
+                    lower_header_row=F,
+                    add_plot_gap=T,
+                    dpi = 400) # 注明箭头所指代的含义,
+shenlin3 <- read_excel("shenlin3.xlsx")
+mydata <- shenlin3
+mydata$Subgroup <- ifelse(is.na(mydata$Reinfection),mydata$Subgroup,
+                          paste0("   ", mydata$Subgroup))  # 再增加一个空格
+mydata$Subgroup <- ifelse(!is.na(mydata$group),mydata$Subgroup,
+                          paste0("   ", mydata$Subgroup))  # 再增加一个空格
+
+#mydata[,5:7]=apply(mydata[,5:7],2,function(x)(as.numeric(x,digits=2)))
+
+mydata[,c("uc","lc","beta")]=apply(mydata[,c("uc","lc","beta")],2,function(x){as.numeric(x)})
+
+# 制作森林图
+myfigure<-forester(left_side_data = mydata[,1:4],
+                   estimate_precision = 2,# 定义森林图中左侧的三个变量
+                   estimate = mydata$beta,
+                   estimate_col_name = "HR (95% CI)",
+                   font_family = "sans",
+                   file_path = here::here("forester.png"),# 森林图中的估计值，或回归系数
+                   
+                   ci_low = mydata$lc,       # 置信区间的下限
+                   
+                   ci_high = mydata$uc,     # 置信区间的上限
+                   
+                   xlim = c(0, 2),             # x轴上的范围
+                   xbreaks=seq(0,2,0.2),
+                   
+                   arrows = TRUE,                  # 在x轴底部添加箭头
+                   
+                   arrow_labels = c("Vaccine effectiveness","Risk of reinfection"),
+                   
+                   null_line_at = 1,
+                   lower_header_row=F,
+                   add_plot_gap=T,
+                   dpi = 400) # 注明箭头所指代的含义,
+
+
+
+
+
+library(epiR)
+for (i in c(1,2,3)) {
+  ratec<-mydat1%>% filter(dose_frist==i)%>%group_by(frist_vac,second)%>% dplyr::summarise(events=sum(secondary,na.rm = T))%>%filter(!is.na(second))
+  ratec1=data.frame(second=rep(range(ratec$second)[1]:range(ratec$second)[2],2))
+  ratec1$frist_vac=rep(c("No","Yes"),each=nrow(ratec1)/2)%>%as.factor()
+  ratec1=merge(ratec1,ratec,by=c("frist_vac","second"),all.x=T)
+  ratec1$events=ifelse(is.na(ratec1$events),0,ratec1$events)
+  ratec1 <- rbind(ratec1 %>% filter(frist_vac=="No") %>% 
+                    mutate(cumnum = cumsum(events)),
+                  ratec1 %>% filter(frist_vac=="Yes") %>% 
+                    mutate(cumnum = cumsum(events)))
+  rate2<-mydat1%>% filter(dose_frist==i)%>%group_by(frist_vac)%>% dplyr::summarise(N=n())
+  ratec=merge(ratec1,rate2,by="frist_vac",all.x=T)
+  rateci <- epi.conf(as.matrix(ratec[,4:5]), ctype = "inc.rate", 
+                     method = "byar",design = 1, 
+                     conf.level = 0.95)
+  rateci=cbind(ratec,rateci)
+  rateci$second=as.Date(rateci$second,"1970-01-01")
+  rateci$group=i
+  rate_table=rbind(rate_table,rateci)
+}
+#write.csv(rateci,"rate_with_time.csv")
+library(scales)
+n=1
+p=list()
+for (i in c(1,2,3)) {
+  if (i==1){
+    a=c("1V-I","1V-I-V")
+  } else if (i==2){
+    a=c("2V-I","2V-I-V")
+  } else {
+    a=c("3V-I","3V-I-V")
+  }
+  p[[n]]<-ggplot(rate_table[rate_table$group==i,],aes(group=frist_vac)) +geom_ribbon(aes(x=second,ymin = lower, ymax =upper,fill=frist_vac),alpha = 0.3,linetype = 2) +geom_line(aes(x=second,y = est,color=frist_vac),size=1.2)+
+    scale_x_date(name="Date",expand=c(0,0),date_breaks = "3 day",labels=date_format("%Y-%m-%d"),limits=as.Date(c("2022-12-01","2023-01-04")))+
+    scale_y_continuous(name="Reinfection rate (%)",expand = c(0,0),limits=c(0,30),breaks = seq(0,30,5),labels = paste(seq(0,30,5),'%',sep=""))+ labs(x = "", y = "",color = "", fill = "",title="")+
+    scale_fill_manual(values = c('#97B9DF','#65B48E'),labels=a)+scale_color_manual(values = c('#5089BC','#65B48E'),labels=a)+
+    theme(plot.title = element_text(hjust = 0))+theme(legend.position=c(0.4,0.85),
+                                                      legend.text = element_text(face="bold",size=20),
+                                                      legend.title = element_text(face="bold",size=20),
+                                                      axis.text= element_text(face="bold",size=20),
+                                                      axis.title = element_text(face="bold",size=20,color = "black",hjust = 0.5),
+                                                      title=element_text(face="bold",size=25,color = "black",hjust = 1),
+                                                      axis.text.x = element_text(angle = 45,vjust = 0.5),
+                                                      axis.line = element_line(size=1.2, colour = "black"),
+                                                      panel.grid.major = element_blank(),
+                                                      panel.grid.minor = element_blank(),
+                                                      panel.border = element_rect(color = "black", size = 1.2, fill = NA),
+                                                      panel.background = element_blank())
+  n=n+1
+}
+#ggsave(ggarrange(p[[1]],p[[2]],p[[3]],ncol=1,labels = LETTERS[1:3],
+font.label = list(size=15,colour="black")),limitsize = FALSE,
+width = 16,height = 16,dpi = 300,filename = "Reinfection rate.png")
+
+##接种率
+library(scales)
+p_1<-rate%>%filter(group%in%c("1st dose of vaccine","2nd dose of vaccine","3rd dose of vaccine"))%>%
+  ggplot( aes(x=接种时间1, y=rate, fill=group)) +geom_area(position = "dodge") +
+  scale_x_date(name="Date",expand=c(0,0),date_breaks = "2 month",labels=date_format("%Y-%m-%d"),limits=as.Date(c("2021-02-01","2023-01-04")))+
+  scale_y_continuous(name="Proportion of people vaccinated \nwith COVID−19 vaccine (%)",expand = c(0,0),limits=c(0,100),breaks = seq(0,100,10),labels = paste(seq(0,100,10),'%',sep=""))+ labs(x = "", y = "",color = "", fill = "",title="")+
+  scale_fill_manual(values = c("#D1E5F0","#92C5DE","#4393C3","#2166AC"))+
+  theme(plot.title = element_text(hjust = 0))+theme(legend.position=c(0.4,0.85),
+                                                    panel.border = element_rect(color = "black", size = 1, fill = NA),
+                                                    legend.text = element_text(face="bold",size=20),
+                                                    legend.title = element_text(face="bold",size=20),
+                                                    axis.text= element_text(face="bold",size=20),
+                                                    axis.title = element_text(face="bold",size=20,color = "black",hjust = 0.5),
+                                                    title=element_text(face="bold",size=20,color = "black",hjust = 1),
+                                                    axis.text.x = element_text(angle = 45,vjust = 0.5),
+                                                    axis.line = element_line(size=1, colour = "black"),
+                                                    panel.grid.major = element_blank(),
+                                                    panel.grid.minor = element_blank(),
+                                                    panel.background = element_blank())+ guides (fill=guide_legend (nrow= 1, byrow=TRUE)) 
+
+data=rate%>%filter(group%in%c("Patial vaccination","Full vaccination","Booster vaccination"))
+data$group=factor(data$group,levels = c("Patial vaccination","Full vaccination","Booster vaccination"))
+p_2<-data%>%
+  ggplot(aes(x=接种时间1, y=rate)) +geom_area(aes(fill=group),position = "dodge") +
+  scale_x_date(name="Date",expand=c(0,0),date_breaks = "2 month",labels=date_format("%Y-%m-%d"),limits=as.Date(c("2021-02-01","2023-01-04")))+
+  scale_y_continuous(name="Proportion of people vaccinated \nwith COVID−19 vaccine (%)",expand = c(0,0),limits=c(0,100),breaks = seq(0,100,10),labels = paste(seq(0,100,10),'%',sep=""))+ labs(x = "", y = "",color = "", fill = "",title="")+
+  scale_fill_manual(values = c("#D1E5F0","#92C5DE","#4393C3"))+
+  theme(plot.title = element_text(hjust = 0))+theme(legend.position=c(0.4,0.85),
+                                                    panel.border = element_rect(color = "black", size = 1, fill = NA),
+                                                    legend.text = element_text(face="bold",size=20),
+                                                    legend.title = element_text(face="bold",size=20),
+                                                    axis.text= element_text(face="bold",size=20),
+                                                    axis.title = element_text(face="bold",size=20,color = "black",hjust = 0.5),
+                                                    title=element_text(face="bold",size=20,color = "black",hjust = 1),
+                                                    axis.text.x = element_text(angle = 45,vjust = 0.5),
+                                                    axis.line = element_line(size=1, colour = "black"),
+                                                    panel.grid.major = element_blank(),
+                                                    panel.grid.minor = element_blank(),
+                                                    panel.background = element_blank())+ guides (fill=guide_legend (nrow= 2, byrow=TRUE)) 
+##ggsave(ggarrange(p_1,p_2,ncol=2,labels = LETTERS[1:2],
+font.label = list(size=15,colour="black")),limitsize = FALSE,
+width = 24,height = 10,dpi = 300,filename = "Vaccination rate.png")
+
+ggsave(ggarrange(ggarrange(p_1,p_2,ncol=2,labels = LETTERS[1:2],
+                           font.label = list(size=15,colour="black")),
+                 ggarrange(p[[1]],p[[2]],p[[3]],ncol=1,labels = LETTERS[3:5],
+                           font.label = list(size=15,colour="black")),heights = c(1,2),ncol=1),
+       limitsize = FALSE,width = 18,height = 25,dpi = 300,filename = "Vaccination and reinfection rate.png")
+
+#ggsave(ggarrange(p_1,p[[1]],p[[2]],p[[3]],ncol=2,nrow=2,labels = LETTERS[1:4],
+                 font.label = list(size=15,colour="black")),
+       limitsize = FALSE,width = 22,height = 14,dpi = 300,filename = "Vaccination and reinfection rate.png")
+ggsave(ggarrange(p_1,                # First row with scatter plot
+                 ggarrange(p[[1]],p[[2]], ncol = 2, labels = c("B", "C")), # Second row with box and dot plots
+                 nrow = 2,
+                 labels = "A",font.label = list(size=15,colour="black")),
+       limitsize = FALSE,width = 14,height = 12,dpi = 300,filename = "Vaccination and reinfection rate.png")
+
+
+ggsave(p_2,limitsize = FALSE,width = 15,height = 12,dpi = 300,filename = "Vaccination rate_S1.png")
+
+
+
+#p1<-p_1+geom_line(aes(x=接种时间1,y=rate),size=3,color='#156077',alpha=0.85,data=rate[rate$group=="Cumulative SRAS−CoV−2 reinfection",])+
+scale_y_continuous(expand = c(0,0),limits=c(0,1.6),breaks=seq(0,1.5,0.15),labels = seq(0,1.5,0.15),sec.axis = sec_axis(~. *40,name="Secondary attack rate (%)"))
+
+
+
+type_VE=NULL
+for (i in c("接种历史2","接种历史3")) {
+  if (i=="接种历史2") {
+    data=data2
+    data$G=data$接种历史2
+  } else {
+    data=data3
+    data$G=data$接种历史3
+  } 
+  for (x in c("Overall",unique(data$chanpin_refe)[unique(data$chanpin_refe)!="Ref"])) {
+    if (x=="Overall"){
+      psm=data
+    } else {
+      psm1=data[data$chanpin_refe==x,] 
+      psm2=data[data$chanpin_refe=="Ref" &data$subclass %in% psm1$subclass,]
+      psm=rbind(psm1,psm2)
+    }
+    temp1<-psm%>%group_by(G)%>%dplyr::summarise(event=sum(secondary,na.rm = T),No=n())
+    temp2 <- epi.conf(as.matrix(temp1[,2:3]), ctype = "inc.rate", 
+                      method = "byar",design = 1, 
+                      conf.level = 0.95)
+    temp2[,1:3]=apply(temp2[,1:3], 2, function(x)x*100)
+    temp2[,1:3]=apply(temp2[,1:3], 2, function(x)round(x,2))
+    temp2$rate <- paste(temp2$est," (",temp2$lower,", ",temp2$upper,")",sep = "")
+    FML<-as.formula(paste0("Surv(time,secondary==1) ~ ",i))
+    Cox<-coxph(FML,data = psm) 
+    Sum<-summary(Cox)
+    Sum$conf.int<-as.data.frame(Sum$conf.int)
+    Pvalue<-round(Sum$coefficients[,5],digits = 3)
+    HR<-round(Sum$coefficients[,2],2)
+    low=round(Sum$conf.int$`lower .95`,2)
+    high=round(Sum$conf.int$`upper .95`,2)
+    type_VE <- rbind(type_VE,
+                     data.frame(group=i,character=x,"Unvaccinated_n"=temp1$No[1],"Unvaccinated"=temp2$rate[1],"Vaccinated_n"=temp1$No[2],"Vaccinated"=temp2$rate[2],"low"=low,"high"=high,"HR"=HR,"Pvalue"=Pvalue))
+  }
+}
+type_VE$CI=paste(paste(paste(type_VE$HR," (",sep=""),paste(round(type_VE$low,2),round(type_VE$high,2),sep = paste(paste("",",",sep="")," ",sep="")),sep = ""),")",sep="")
+type_VE$CI<-case_when(
+  type_VE$Pvalue<0.001~paste(type_VE$CI,"***",sep = ""),
+  type_VE$Pvalue<0.01 ~paste(type_VE$CI,"**", sep = ""),
+  type_VE$Pvalue<0.05 ~paste(type_VE$CI,"*",  sep = ""),
+  TRUE ~ type_VE$CI)
+type_VE$Pvalue<-ifelse(as.numeric(type_VE$Pvalue)<0.001,"< 0.001",round(as.numeric(type_VE$Pvalue),digits = 3))
+getwd()
+type_VE$N="NA"
+for (i in unique(type_VE$group)) {
+  n=type_VE[type_VE$group==i&type_VE$character=="Overall","Unvaccinated_n"]
+  type_VE$N=ifelse(type_VE$group==i,n,type_VE$N)
+}
+type_VE$Unvaccinated_n=paste(type_VE$Unvaccinated_n," (",round(type_VE$Unvaccinated_n/as.numeric(type_VE$N)*100,2),")",sep = "")
+type_VE$Vaccinated_n=paste(type_VE$Vaccinated_n," (",round(type_VE$Vaccinated_n/as.numeric(type_VE$N)*100,2),")",sep = "")
+write.csv(type_VE,"疫苗类型VE.csv")
+####第一次阳性之前是否全程接种###
+status_PSM=list()
+n=1
+covariates1=c("接种历史5","接种历史6")
+for (x in covariates1) {
+  if (x=="接种历史5"){
+    data=mydat1[mydat1$status_fir1=="Patial vaccination"&is.na(mydat1$接种时间4),]
+    fitmodel2 <- MatchIt::matchit(接种历史5 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  } else {
+    data=mydat1[mydat1$status_fir1=="Full vaccination"&is.na(mydat1$接种时间4),]
+    fitmodel2 <- MatchIt::matchit(接种历史6 ~ age + sex+region+Occupation1+symptom,
+                                  data = data, ratio = 1,
+                                  method = 'nearest',
+                                  distance = 'glm', link = 'logit',
+                                  exact = ~ age + sex+region+Occupation1+symptom,
+                                  caliper = .2)
+  }
+  psm<- match.data(fitmodel2)
+  status_PSM[[n]]<-psm
+  n=n+1
+}
+
+data_p=status_PSM[[1]]
+data_p$chanpin_refe=ifelse(is.na(data_p$fir_status),"Ref",ifelse(
+  data_p$fir_status=="灭活疫苗","1 dose inactivated vaccine",ifelse(
+    data_p$fir_status=="重组蛋白疫苗","1 dose recombinant protein vaccine","2 doses vaccines"
+  )
+))
+data_f=status_PSM[[2]]
+data_f$chanpin_refe=ifelse(is.na(data_f$fir_status),"Ref",ifelse(
+  data_f$fir_status=="灭活疫苗","1 dose inactivated vaccine",ifelse(
+    data_f$fir_status=="重组蛋白疫苗","1 dose recombinant protein vaccine",ifelse(
+      data_f$fir_status=="腺病毒载体疫苗","1 dose Ad5-nCoV","2 doses vaccines"
+    )
+  )
+))
+type_VE=NULL
+for (i in c("接种历史5","接种历史6")) {
+  if (i=="接种历史5") {
+    data=data_p
+    data$G=data$接种历史5
+  } else {
+    data=data_f
+    data$G=data$接种历史6
+  } 
+  for (x in c("Overall",unique(data$chanpin_refe)[unique(data$chanpin_refe)!="Ref"])) {
+    if (x=="Overall"){
+      psm=data
+    } else {
+      psm1=data[data$chanpin_refe==x,] 
+      psm2=data[data$chanpin_refe=="Ref" &data$subclass %in% psm1$subclass,]
+      psm=rbind(psm1,psm2)
+    }
+    temp1<-psm%>%group_by(G)%>%dplyr::summarise(event=sum(secondary,na.rm = T),No=n())
+    temp2 <- epi.conf(as.matrix(temp1[,2:3]), ctype = "inc.rate", 
+                      method = "byar",design = 1, 
+                      conf.level = 0.95)
+    temp2[,1:3]=apply(temp2[,1:3], 2, function(x)x*100)
+    temp2[,1:3]=apply(temp2[,1:3], 2, function(x)round(x,2))
+    temp2$rate <- paste(temp2$est," (",temp2$lower,", ",temp2$upper,")",sep = "")
+    FML<-as.formula(paste0("Surv(time,secondary==1) ~ ",i))
+    Cox<-coxph(FML,data = psm) 
+    Sum<-summary(Cox)
+    Sum$conf.int<-as.data.frame(Sum$conf.int)
+    Pvalue<-round(Sum$coefficients[,5],digits = 3)
+    HR<-round(Sum$coefficients[,2],2)
+    low=round(Sum$conf.int$`lower .95`,2)
+    high=round(Sum$conf.int$`upper .95`,2)
+    type_VE <- rbind(type_VE,
+                     data.frame(group=i,character=x,"Unvaccinated_n"=temp1$No[1],"Unvaccinated"=temp2$rate[1],"Vaccinated_n"=temp1$No[2],"Vaccinated"=temp2$rate[2],"low"=low,"high"=high,"HR"=HR,"Pvalue"=Pvalue))
+  }
+}
+type_VE$CI=paste(paste(paste(type_VE$HR," (",sep=""),paste(round(type_VE$low,2),round(type_VE$high,2),sep = paste(paste("",",",sep="")," ",sep="")),sep = ""),")",sep="")
+type_VE$CI<-case_when(
+  type_VE$Pvalue<0.001~paste(type_VE$CI,"***",sep = ""),
+  type_VE$Pvalue<0.01 ~paste(type_VE$CI,"**", sep = ""),
+  type_VE$Pvalue<0.05 ~paste(type_VE$CI,"*",  sep = ""),
+  TRUE ~ type_VE$CI)
+type_VE$Pvalue<-ifelse(as.numeric(type_VE$Pvalue)<0.001,"< 0.001",round(as.numeric(type_VE$Pvalue),digits = 3))
+getwd()
+type_VE$N="NA"
+for (i in unique(type_VE$group)) {
+  n=type_VE[type_VE$group==i&type_VE$character=="Overall","Unvaccinated_n"]
+  type_VE$N=ifelse(type_VE$group==i,n,type_VE$N)
+}
+type_VE$Unvaccinated_n=paste(type_VE$Unvaccinated_n," (",round(type_VE$Unvaccinated_n/as.numeric(type_VE$N)*100,2),")",sep = "")
+type_VE$Vaccinated_n=paste(type_VE$Vaccinated_n," (",round(type_VE$Vaccinated_n/as.numeric(type_VE$N)*100,2),")",sep = "")
+write.csv(type_VE,"疫苗状态VE.csv")
+
+
+
+
+
+
+
+##############S-Table2#######
+library(Rmisc)
+library(tableone)
+case=mydat1[,c("age1","age","sex","status","severity_fir")]
+recase=mydat1[,c("age1","age","sex","status","severity_fir","secondary")]
+recase$secondary=factor(recase$secondary)
+write.csv(print(CreateTableOne(vars = c("age","sex","status","severity_fir"),
+                               factorVars = c("age","sex","status","severity_fir"),data = case),showAllLevels = T),file = "table S1_1.csv")
+write.csv(print(CreateTableOne(vars = c("age","sex","status","severity_fir"),
+                               factorVars = c("age","sex","status","severity_fir"),strata = c("secondary"),data = recase),showAllLevels = T),file = "table S1_2.csv")
+
+write.csv(print(CreateTableOne(vars = c("age","sex","status","severity_fir"),
+                               factorVars = c("age","sex","status","severity_fir"),data = case[case$severity_fir!="Unknown",]),showAllLevels = T),file = "table S1_3.csv")
+
+
+
+#####Baseline demographic characteristics of cohort
+Variates=c("接种历史1","接种历史2","接种历史3","Gap0","Gap1","Gap2","接种历史5","接种历史6")
+baseline=NULL
+for (i in seq(2,8,1)) {
+  data=PSM[[i]]
+  variat=Variates[i]
+  a=print(CreateTableOne(vars = c("sex","age","region","Occupation1","severity_fir"),
+                         factorVars = c("sex","age","region","Occupation1","severity_fir"),strata = c(variat),data = data),showAllLevels = T,test = FALSE,smd = TRUE,contDigits = 1)%>%as.data.frame()
+  names(a)=c("level","Unvaccinated group","Vaccinated group","SMD")
+  a$group=variat
+  baseline=rbind(baseline,a)
+}
+write.csv(baseline,"baseline.csv")
+
+
